@@ -1,0 +1,481 @@
+C51 COMPILER V9.60.0.0   MAIN                                                              12/24/2020 22:35:25 PAGE 1   
+
+
+C51 COMPILER V9.60.0.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Objects\main.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE main.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND PRINT(.\Listings\main
+                    -.lst) TABS(2) OBJECT(.\Objects\main.obj)
+
+line level    source
+
+   1          #include <reg51.h>
+   2          #include <inttypes.h>
+   3          #include <string.h>
+   4          
+   5          #include <stdlib.h>
+   6          
+   7          #include <lcd.h>
+   8          #include <stdio.h>
+   9          
+  10          #define BUFFER_SIZE 10
+  11          #define MAX_SPEED 100
+  12          
+  13          
+  14          void print_constant( uint8_t* str);
+  15          
+  16          void Ext_int_Init()
+  17          {
+  18   1        EA = 1; /* Enable global interrupt */
+  19   1          EX0 = 1;
+  20   1          IT0 = 1;
+  21   1          ET0 = 1;
+  22   1        ES = 1; /* Enable Ext. interrupt0 */
+  23   1      }
+  24          
+  25          void disable()
+  26          {
+  27   1        EA = 0;
+  28   1          EX0 = 0;
+  29   1          ET0 = 0;
+  30   1        ES = 0;
+  31   1      }
+  32          
+  33          void enable()
+  34          {
+  35   1        EA = 1;
+  36   1          EX0 = 1;
+  37   1          ET0 = 1;
+  38   1        ES = 1;
+  39   1      }
+  40          
+  41          void initTimers()
+  42          {
+  43   1        TMOD = 0x21; /* Timer 1, 8-bit auto reload mode  Timer 0 mode 2 reloadf*/
+  44   1        TH1 = 0xF4; /* Load value for 2400 baud rate */
+  45   1          TH0 = 0xFF;
+  46   1        TL0 = 0xF0;      // 10 us period
+  47   1        SCON = 0x50; /* Mode 1, reception enable */
+  48   1        TR1 = 1; /* Start timer 1 */
+  49   1          TR0 = 1;
+  50   1      }
+  51          
+  52          
+  53          volatile uint8_t is_input_full = 0;
+  54          volatile uint8_t  input_buffer[BUFFER_SIZE];
+C51 COMPILER V9.60.0.0   MAIN                                                              12/24/2020 22:35:25 PAGE 2   
+
+  55          uint8_t input_buffer_index = 0;
+  56          
+  57          
+  58          uint8_t newline_entered = 0;
+  59          uint8_t send = 1;
+  60          uint8_t received = 0;
+  61          void Serial_ISR() interrupt 4
+  62          {
+  63   1        if(TI==1){
+  64   2          send = 1;
+  65   2          TI = 0; /* Clear TI flag */
+  66   2        }
+  67   1        if(RI==1){
+  68   2          uint8_t in = SBUF;        
+  69   2          if(input_buffer_index < BUFFER_SIZE)
+  70   2          {
+  71   3            input_buffer[input_buffer_index] = in;
+  72   3            input_buffer_index++;
+  73   3              
+  74   3            if(in == '\n')
+  75   3            {
+  76   4              if(input_buffer_index < BUFFER_SIZE)
+  77   4                input_buffer[input_buffer_index] = '\0';
+  78   4              else
+  79   4                input_buffer[input_buffer_index - 1] = '\0';
+  80   4              
+  81   4              newline_entered = 1;
+  82   4              input_buffer_index = 0;
+  83   4            }
+  84   3          }
+  85   2          else{
+  86   3            is_input_full  = 1;
+  87   3            input_buffer_index = 0; 
+  88   3          }
+  89   2          received = 1;
+  90   2          RI = 0; /* Clear RI flag */
+  91   2        }
+  92   1      }
+  93          
+  94          int desiredSpeed = 0;
+  95          int keypadValue = 1;
+  96          unsigned int measure;
+  97          int iterationCount = 0;
+  98          
+  99          int revolution = 0;
+ 100          sbit LED = P1^0;
+ 101          sbit LED2 = P1^1;
+ 102          int  printFlag = 0;
+ 103          int  curSpeed = 0;
+ 104          int  prevSpeed = 0;
+ 105          int  curAcceleration = 0;
+ 106          
+ 107          
+ 108          sbit Abit = P3^3;
+ 109          sbit Bbit = P3^4;
+ 110          
+ 111          
+ 112          void External0_ISR() interrupt 0
+ 113          {
+ 114   1          revolution++;
+ 115   1      } 
+ 116          
+C51 COMPILER V9.60.0.0   MAIN                                                              12/24/2020 22:35:25 PAGE 3   
+
+ 117          int calcSpeedFlag = 0;
+ 118          int calcSpeedCounter = 0;
+ 119          void Timer0_ISR() interrupt 1
+ 120          {
+ 121   1        LED = ~LED; /* Toggle pin on falling edge on INT0 pin */
+ 122   1      
+ 123   1        if(iterationCount < desiredSpeed)
+ 124   1        {
+ 125   2          Abit = 0;
+ 126   2          Bbit = 1;
+ 127   2        }
+ 128   1        else if(iterationCount >= desiredSpeed)
+ 129   1        {
+ 130   2          Abit = 0;
+ 131   2          Bbit = 0;
+ 132   2        }
+ 133   1      
+ 134   1        if(iterationCount >= MAX_SPEED)
+ 135   1        {
+ 136   2          iterationCount = 0;
+ 137   2        }
+ 138   1      
+ 139   1        iterationCount++;
+ 140   1      
+ 141   1        calcSpeedCounter++;
+ 142   1        if(calcSpeedCounter >= 100)
+ 143   1        {
+ 144   2          calcSpeedFlag = 1;
+ 145   2          calcSpeedCounter = 0;
+ 146   2        }
+ 147   1          TH0 = 0xFF;
+ 148   1        TL0 = 0xF0; 
+ 149   1      }
+ 150          
+ 151          
+ 152          void print_constant( uint8_t* str)
+ 153          {
+ 154   1        uint8_t ch;
+ 155   1        uint8_t i;
+ 156   1        i = 0;
+ 157   1        ch = str[0];
+ 158   1        while(ch != '\0')
+ 159   1        {
+ 160   2          disable();
+ 161   2          send = 0;
+ 162   2          enable();
+ 163   2      
+ 164   2          SBUF = ch;
+ 165   2          while(!send);
+ 166   2          i++;
+ 167   2          ch = str[i];
+ 168   2        }
+ 169   1      }
+ 170          
+ 171          
+ 172          sbit INTR = P3^5;
+ 173          uint8_t  read_adc()
+ 174          {
+ 175   1        uint8_t measure;
+ 176   1        P2 = 0xFF;
+ 177   1        RD = 0;       //rd line low
+ 178   1        WR = 0;
+C51 COMPILER V9.60.0.0   MAIN                                                              12/24/2020 22:35:25 PAGE 4   
+
+ 179   1        WR = 1;         //initiate adc transmission
+ 180   1        while(INTR != 0); //wait transmission to finish
+ 181   1        measure = P2;
+ 182   1        return measure;
+ 183   1      }
+ 184          
+ 185          
+ 186          sbit row0 = P0^0;
+ 187          sbit row1 = P0^1;
+ 188          sbit row2 = P0^2;
+ 189          sbit row3 = P0^3;
+ 190          sbit col0 = P0^4;
+ 191          sbit col1 = P0^5;
+ 192          sbit col2 = P0^6;
+ 193          
+ 194          sbit switch0 = P0^7;
+ 195          
+ 196          int colScan(int* keyValue)
+ 197          {
+ 198   1        if(col0 == 0)
+ 199   1        {
+ 200   2          return 1;
+ 201   2        }
+ 202   1        (*keyValue)++;
+ 203   1      
+ 204   1        if (col1 == 0)
+ 205   1        {
+ 206   2          return 1;
+ 207   2        }
+ 208   1        (*keyValue)++;
+ 209   1        
+ 210   1        if (col2 == 0)
+ 211   1        {
+ 212   2          return 1;
+ 213   2        }
+ 214   1        (*keyValue)++;
+ 215   1      
+ 216   1        return 0;
+ 217   1      }
+ 218          
+ 219          int searchKey()
+ 220          {
+ 221   1        int keyValue;
+ 222   1      
+ 223   1        keyValue = 0;
+ 224   1      
+ 225   1        row3 = 1;
+ 226   1        row0 = 0;
+ 227   1        if(colScan(&keyValue))
+ 228   1        {
+ 229   2          row0 = 1;
+ 230   2          return keyValue;
+ 231   2        }
+ 232   1        row0 = 1;
+ 233   1        row1 = 0;
+ 234   1        if(colScan(&keyValue))
+ 235   1        {
+ 236   2          row1 = 1;
+ 237   2          return keyValue;
+ 238   2        }
+ 239   1        row1 = 1;
+ 240   1        row2 = 0;
+C51 COMPILER V9.60.0.0   MAIN                                                              12/24/2020 22:35:25 PAGE 5   
+
+ 241   1        if(colScan(&keyValue))
+ 242   1        {
+ 243   2          row2 = 1;
+ 244   2          return keyValue;
+ 245   2        }
+ 246   1        row2 = 1;
+ 247   1        row3 = 0;
+ 248   1        if(colScan(&keyValue))
+ 249   1        {
+ 250   2          row3 = 1;
+ 251   2          return keyValue;
+ 252   2        }
+ 253   1        return -1;  
+ 254   1      }
+ 255          
+ 256          int idata overrideGear = 0;
+ 257          unsigned int idata overrideSpeed = 0;
+ 258          int idata overrideFlag = 0;
+ 259          int idata acceptMessage = 0;
+ 260          
+ 261          int keypadVal = -1;
+ 262          int  gearVal = 0;
+ 263          unsigned int speedVal = 0;
+ 264          
+ 265          char buffer[10];
+ 266          char idata messageBuffer[10];
+ 267          
+ 268          
+ 269          int checkParity(char* message)
+ 270          {
+ 271   1        char parityStr[4];
+ 272   1        int parityVal;
+ 273   1        int sumOfChars = 0;
+ 274   1        int i;
+ 275   1        for (i = 0; i < 5; i++)
+ 276   1        {
+ 277   2          sumOfChars+= (int) message[i];
+ 278   2        }
+ 279   1        memcpy(parityStr, &message[5], 3);
+ 280   1        parityStr[3] = '\0';
+ 281   1        parityVal = atoi(parityStr);
+ 282   1        
+ 283   1        if(parityVal == (sumOfChars % 255))
+ 284   1        {
+ 285   2          return 1;
+ 286   2        }
+ 287   1        else
+ 288   1        {
+ 289   2          return 0;
+ 290   2        }
+ 291   1      }
+ 292          
+ 293          
+ 294          void main()
+ 295          {
+ 296   1      
+ 297   1        Ext_int_Init(); 
+ 298   1        initTimers();
+ 299   1      
+ 300   1      
+ 301   1        functionSet();
+ 302   1        entryModeSet(1, 0);
+C51 COMPILER V9.60.0.0   MAIN                                                              12/24/2020 22:35:25 PAGE 6   
+
+ 303   1        displayOnOffControl(1, 1, 1); 
+ 304   1      
+ 305   1        
+ 306   1        while(1)
+ 307   1          {
+ 308   2          if(switch0 == 0)
+ 309   2          {
+ 310   3            acceptMessage = 1;
+ 311   3          }
+ 312   2          else
+ 313   2          {
+ 314   3            overrideFlag = 0;
+ 315   3            acceptMessage = 0;
+ 316   3          }
+ 317   2          
+ 318   2      
+ 319   2          //keypad task
+ 320   2          keypadVal = searchKey();
+ 321   2          if(keypadVal != -1)
+ 322   2          {
+ 323   3            if(keypadVal == 1)
+ 324   3              keypadVal = 0;
+ 325   3            else
+ 326   3            {
+ 327   4                keypadVal = 12 - keypadVal;
+ 328   4            }
+ 329   3            gearVal = keypadVal;
+ 330   3            // sprintf(buffer, "key: %d\n", keypadVal);
+ 331   3            // print_constant(buffer);
+ 332   3          }
+ 333   2      
+ 334   2          //serial task
+ 335   2          if(newline_entered)
+ 336   2          {
+ 337   3            char op;
+ 338   3            newline_entered = 0;
+ 339   3            disable();
+ 340   3            memcpy(messageBuffer, input_buffer, BUFFER_SIZE);
+ 341   3            enable();
+ 342   3            
+ 343   3            if(acceptMessage)
+ 344   3            {
+ 345   4              op = messageBuffer[0];
+ 346   4      
+ 347   4              if(checkParity(messageBuffer))
+ 348   4              {
+ 349   5                if(op == 'O')
+ 350   5                {
+ 351   6                  char idata speedChar[4];
+ 352   6                  char idata gearChar;
+ 353   6                  memcpy(speedChar, &messageBuffer[1], 3);
+ 354   6                  speedChar[3] = '\0';
+ 355   6                  gearChar = messageBuffer[4];
+ 356   6      
+ 357   6                  overrideSpeed = atoi(speedChar);
+ 358   6                  overrideGear = (int) gearChar - 48;
+ 359   6      
+ 360   6                  // sprintf(buffer, "%d\n", overrideSpeed);
+ 361   6                  // print_constant(buffer);
+ 362   6      
+ 363   6                  // sprintf(buffer, "%d\n", overrideGear); 
+ 364   6                  // print_constant(buffer);
+C51 COMPILER V9.60.0.0   MAIN                                                              12/24/2020 22:35:25 PAGE 7   
+
+ 365   6      
+ 366   6                  overrideFlag = 1;
+ 367   6                  print_constant("ACK\n");
+ 368   6                }
+ 369   5                if(op == 'S')
+ 370   5                {
+ 371   6                  overrideFlag = 0;
+ 372   6                  print_constant("ACK\n");
+ 373   6                }
+ 374   5              }
+ 375   4              else
+ 376   4              {
+ 377   5                print_constant("NACK\n");
+ 378   5              }
+ 379   4      
+ 380   4            }
+ 381   3            else
+ 382   3            {
+ 383   4              print_constant("NACK\n");
+ 384   4            }   
+ 385   3      
+ 386   3          }
+ 387   2      
+ 388   2          //motor task
+ 389   2          if(calcSpeedFlag)
+ 390   2          {
+ 391   3            long int idata tmp;
+ 392   3              int locDesiredSpeed;
+ 393   3            calcSpeedFlag = 0;
+ 394   3            speedVal = (unsigned int) read_adc();
+ 395   3      
+ 396   3            // sprintf(buffer, "g:%d\n", gearVal);
+ 397   3            // print_constant(buffer);
+ 398   3      
+ 399   3            // sprintf(buffer, "s:%u\n", speedVal);
+ 400   3            // print_constant(buffer);
+ 401   3            if(overrideFlag)
+ 402   3            {
+ 403   4              tmp =  (long int) (overrideSpeed * overrideGear)*MAX_SPEED; 
+ 404   4            }
+ 405   3            else
+ 406   3            {
+ 407   4              tmp = (long int) (speedVal*gearVal)*MAX_SPEED;
+ 408   4            }
+ 409   3      
+ 410   3            disable();
+ 411   3            desiredSpeed = tmp/2295;
+ 412   3            locDesiredSpeed = desiredSpeed;
+ 413   3            enable();
+ 414   3            // sprintf(buffer, "d:%u\n", locDesiredSpeed);
+ 415   3            // print_constant(buffer);
+ 416   3      
+ 417   3            disable();
+ 418   3            curSpeed = revolution;
+ 419   3            revolution = 0;
+ 420   3            enable();
+ 421   3      
+ 422   3            curAcceleration = curSpeed - prevSpeed;
+ 423   3            prevSpeed = curSpeed;
+ 424   3             
+ 425   3                  // sprintf(buffer, "%d 1/ms\n", curSpeed);
+ 426   3                  // print_constant(buffer);
+C51 COMPILER V9.60.0.0   MAIN                                                              12/24/2020 22:35:25 PAGE 8   
+
+ 427   3      
+ 428   3            //LCD task
+ 429   3            sprintf(buffer, "%d   ", curSpeed);
+ 430   3            returnHome();
+ 431   3            sendString(buffer);
+ 432   3            setDdRamAddress(0x40); 
+ 433   3            sprintf(buffer, "%d   ", curAcceleration);
+ 434   3            sendString(buffer);
+ 435   3      
+ 436   3        
+ 437   3      
+ 438   3          }
+ 439   2      
+ 440   2          
+ 441   2      
+ 442   2          }
+ 443   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1083    ----
+   CONSTANT SIZE    =     17    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     53      17
+   IDATA SIZE       =     18       9
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

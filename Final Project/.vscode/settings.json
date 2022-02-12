@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "__locale": "c",
+        "ios": "c",
+        "climits": "cpp",
+        "sstream": "cpp",
+        "streambuf": "cpp",
+        "algorithm": "c"
+    }
+}
